@@ -6,4 +6,4 @@ g++ -lpthread thread_sync_bench.cc -o thread_sync_bench
 
 python3 ./avg.py data.txt | tee avg.txt
 
-gnuplot ./plot.gnuplot
+gnuplot ./plot.gnuplot > plot.ps
