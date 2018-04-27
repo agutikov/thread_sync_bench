@@ -44,14 +44,10 @@ struct sync_queue
 
 int count_from_delay(int64_t delay)
 {
-  if (delay < 1000) {
+  if (delay <= 100000) {
     return 10000;
-  } else if (delay < 1000000) {
-    return 2000;
-  } else if (delay < 10000000) {
-    return 1000;
   }
-  return 200;
+  return 1000000000 / delay;
 }
 
 void run_test(int64_t delay, sync_queue& sink)
