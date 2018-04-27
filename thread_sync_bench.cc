@@ -42,12 +42,24 @@ struct sync_queue
   }
 };
 
+int count_from_delay(int64_t delay)
+{
+  if (delay < 1000) {
+    return 10000;
+  } else if (delay < 1000000) {
+    return 2000;
+  } else if (delay < 10000000) {
+    return 1000;
+  }
+  return 200;
+}
+
 void run_test(int64_t delay, sync_queue& sink)
 {
   std::cerr << delay << std::endl;
   std::this_thread::sleep_for(1s);
-  int cnt = 1000;
-  while (cnt-- > 0) {
+  int count = count_from_delay(delay);
+  while (count-- > 0) {
     if (delay > 0) {
       std::this_thread::sleep_for(delay * 1ns);
     }
@@ -58,12 +70,11 @@ void run_test(int64_t delay, sync_queue& sink)
 void producer_worker(sync_queue& sink)
 {
   run_test(0, sink);
-  for (int64_t d1 : {1, 10, 100, 1000, 10000, 100000, 1000000}) {
+  for (int64_t d1 : {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000}) {
     for (int64_t d2 : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
       run_test(d1*d2, sink);
     }
   }
-  run_test(10000000, sink);
   sink.send({hr_clock::now(), false, 0});
   std::cerr << "prod exit" << std::endl;
 }

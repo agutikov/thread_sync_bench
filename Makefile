@@ -1,6 +1,6 @@
 
 
-.PHONY: all
+.PHONY: all stats
 
 all: plot.png
 
@@ -10,8 +10,8 @@ bench: thread_sync_bench.cc
 data.txt: bench
 	./bench | tee $@
 
-avg.txt: data.txt
-	python3 ./avg.py $< | tee $@
+stats: data.txt
+	python3 ./stats.py $< mean.txt median.txt
 
-plot.png: avg.txt
+plot.png: stats
 	gnuplot ./plot.gnuplot > $@
