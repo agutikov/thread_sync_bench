@@ -7,127 +7,158 @@
 #include <cstdio>
 #include <iostream>
 #include <vector>
+#include <memory>
+#include <tuple>
+#include <functional>
+
 
 using namespace std::chrono_literals;
 
-using hr_clock = std::chrono::high_resolution_clock;
 
-// 1sr - start time_point,
-// 2nd - end mark (true - continue),
-// 3rd - delay in us
-using frame_t = std::tuple<hr_clock::time_point, bool, int64_t>;
-
+template<typename T>
 struct sync_queue
 {
-  std::queue<frame_t> q;
-  std::mutex m;
-  std::condition_variable cv;
+    std::queue<T> q;
+    std::mutex m;
+    std::condition_variable cv;
 
-  void send(frame_t x)
-  {
-    std::unique_lock<std::mutex> lock(m);
-    q.push(x);
-    cv.notify_one();
-  }
-
-  frame_t recv()
-  {
-    std::unique_lock<std::mutex> lock(m);
-    if (q.empty()) {
-      cv.wait(lock, [this](){ return !q.empty(); });
+    void send(T x)
+    {
+        std::unique_lock<std::mutex> lock(m);
+        q.push(x);
+        cv.notify_one();
     }
-    auto x = q.front();
-    q.pop();
-    return x;
-  }
+
+    T recv()
+    {
+        std::unique_lock<std::mutex> lock(m);
+        if (q.empty()) {
+            cv.wait(lock, [this](){ return !q.empty(); });
+        }
+        auto x = q.front();
+        q.pop();
+        return x;
+    }
 };
 
-int count_from_delay(int64_t delay)
-{
-  if (delay <= 100000) {
-    return 10000;
-  }
-  return 1000000000 / delay;
-}
 
-void run_test(int64_t delay, sync_queue& sink)
+using hr_clock = std::chrono::high_resolution_clock;
+
+// 0-th - start time_point
+// 1-st - end mark (true - continue)
+// 2-nd - frequency, objs/s
+using frame = std::tuple<hr_clock::time_point, bool, double>;
+
+using queue = sync_queue<frame>;
+
+
+size_t count_from_delay(size_t delay_ns)
 {
-  std::cerr << delay << std::endl;
-  std::this_thread::sleep_for(1s);
-  int count = count_from_delay(delay);
-  while (count-- > 0) {
-    if (delay > 0) {
-      std::this_thread::sleep_for(delay * 1ns);
+    if (delay_ns <= 10000) {
+        return 1000;
     }
-    sink.send({hr_clock::now(), true, delay});
-  }
-}
-
-void producer_worker(sync_queue& sink)
-{
-  run_test(0, sink);
-  for (int64_t d1 : {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000}) {
-    for (int64_t d2 : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
-      run_test(d1*d2, sink);
+    if (delay_ns >= 1000000) {
+        return 10;
     }
-  }
-  sink.send({hr_clock::now(), false, 0});
-  std::cerr << "prod exit" << std::endl;
+    return 100000000 / delay_ns;
 }
 
-std::vector<std::tuple<int64_t, hr_clock::duration>> results;
-
-void consumer_worker(sync_queue& src)
+double freq_from_delay(size_t delay_ns)
 {
-  while (true) {
-    auto x = src.recv();
-    if (!std::get<1>(x)) {
-      break;
-    }
-    auto stop = hr_clock::now();
-    results.emplace_back(std::get<2>(x), stop - std::get<0>(x));
-  }
-  std::cerr << "cons exit" << std::endl;
+    return 1000000000.0 / delay_ns;
 }
 
-void pipe_worker(sync_queue& src, sync_queue& sink)
+void produce_batch(size_t delay, std::shared_ptr<queue> sink)
 {
-  while (true) {
-    auto x = src.recv();
-    sink.send(x);
-    if (!std::get<1>(x)) {
-      break;
+    std::cerr << delay << std::endl;
+    size_t count = count_from_delay(delay);
+    while (count-- > 0) {
+        if (delay > 0) {
+            std::this_thread::sleep_for(delay * 1ns);
+        }
+        sink->send({hr_clock::now(), true, freq_from_delay(delay)});
     }
-  }
-  std::cerr << "pipe exit" << std::endl;
 }
+
+void producer_worker(std::shared_ptr<queue> sink)
+{
+    produce_batch(0, sink);
+    for (size_t d1 : {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000}) {
+        for (size_t d2 : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
+            produce_batch(d1*d2, sink);
+            std::this_thread::sleep_for(1s);
+        }
+    }
+    sink->send({hr_clock::now(), false, 0});
+    std::cerr << "prod exit" << std::endl;
+}
+
+// 0-th - ops/s
+// 1-nd - latency, us
+std::vector<std::tuple<double, double>> results;
+
+void consumer_worker(std::shared_ptr<queue> src)
+{
+    while (true) {
+        auto x = src->recv();
+        if (!std::get<1>(x)) {
+            break;
+        }
+        auto stop = hr_clock::now();
+        std::chrono::duration<double, std::micro> latency = stop - std::get<0>(x);
+        results.emplace_back(freq_from_delay(std::get<2>(x)), latency.count());
+    }
+    std::cerr << "cons exit" << std::endl;
+}
+
+void pipe_worker(std::shared_ptr<queue> src, std::shared_ptr<queue> sink)
+{
+    while (true) {
+        auto x = src->recv();
+        sink->send(x);
+        if (!std::get<1>(x)) {
+            break;
+        }
+    }
+    std::cerr << "pipe exit" << std::endl;
+}
+
+
+void run_benchmark(int n_threads)
+{
+    auto q1 = std::make_shared<queue>();
+
+    std::thread consumer_thread(consumer_worker, q1);
+
+    std::vector<std::thread> threads;
+    std::shared_ptr<queue> src = nullptr;
+    std::shared_ptr<queue> sink = q1;
+    for (int i = 0; i < n_threads; i++) {
+        src = std::make_shared<queue>();
+        threads.emplace_back(pipe_worker, src, sink);
+        sink = src;
+    }
+
+    std::thread producer_thread(producer_worker, sink);
+
+    producer_thread.join();
+    for (auto& t : threads) {
+        t.join();
+    }
+    consumer_thread.join();
+
+    for (const auto& r : results) {
+        std::cout << std::get<0>(r) << " " << std::get<1>(r) << std::endl;
+    }
+    results.clear();
+}
+
 
 int main(int argc, const char* argv[])
 {
-  sync_queue q1;
+    int n_threads = strtol(argv[1], 0, 0);
 
-  std::thread consumer_thread(consumer_worker, std::ref(q1));
+    run_benchmark(n_threads);
 
-  std::vector<std::thread> threads;
-  sync_queue* src = nullptr;
-  sync_queue* sink = &q1;
-  for (int i = 0; i < 99; i++) {
-    src = new sync_queue();
-    threads.emplace_back(pipe_worker, std::ref(*src), std::ref(*sink));
-    sink = src;
-  }
-
-  std::thread producer_thread(producer_worker, std::ref(*sink));
-
-  producer_thread.join();
-  for (auto& t : threads) {
-    t.join();
-  }
-  consumer_thread.join();
-
-  for (const auto& r : results) {
-    std::cout << std::get<0>(r) << " " << std::get<1>(r)/1ns << std::endl;
-  }
-
-  return 0;
+    return 0;
 }

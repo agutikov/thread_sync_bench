@@ -7,6 +7,6 @@ set log y
 
 set grid mxtics mytics xtics ytics lt 1 lc rgb 'gray70', lt 1 lc rgb 'gray90'
 
-plot 'data.txt', 'mean.txt' with linespoints ls 1 lt 7 ps 2 lc rgb 'red', 'median.txt' with linespoints ls 1 lt 7 ps 2 lc rgb 'blue'
+plot data, mean with linespoints ls 1 lt 7 ps 2 lc rgb 'red', median with linespoints ls 1 lt 7 ps 2 lc rgb 'blue'
 
 #pause -1
