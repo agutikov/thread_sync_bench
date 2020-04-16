@@ -61,21 +61,33 @@ using frame = std::tuple<hr_clock::time_point, FrameType, double>;
 using queue = sync_queue<frame>;
 
 
+void wait(size_t ns)
+{
+    if (ns == 0) {
+        return;
+    }
+    if (ns > 100000) {
+        std::this_thread::sleep_for(ns * 1ns);
+    } else {
+        auto started = hr_clock::now();
+        while ((hr_clock::now() - started) < ns * 1ns) ;
+    }
+}
+
+#define MAX_BATCH_SIZE 1000
+
 void produce_batch(size_t delay, std::shared_ptr<queue> sink)
 {
     std::cerr << delay << std::endl;
     size_t count = 1000000000 / (delay != 0 ? delay : 1);
-    // limit number of frames in banch - 10k
-    if (count > 10000) {
-        count = 10000;
+    if (count > MAX_BATCH_SIZE) {
+        count = MAX_BATCH_SIZE;
     }
 
     auto started = hr_clock::now();
     while (count-- > 0) {
-        if (delay > 0) {
-            std::this_thread::sleep_for(delay * 1ns);
-        }
         sink->send({hr_clock::now(), FrameType::MSG, delay});
+        wait(delay);
     }
     sink->send({started, FrameType::BATCH_END, delay});
 }
@@ -83,10 +95,10 @@ void produce_batch(size_t delay, std::shared_ptr<queue> sink)
 void producer_worker(std::shared_ptr<queue> sink)
 {
     produce_batch(0, sink);
-    for (size_t d1 : {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000}) {
+    for (size_t d1 : {10, 100, 1000, 10000, 100000, 1000000, 10000000}) {
         for (size_t d2 : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
             produce_batch(d1*d2, sink);
-            std::this_thread::sleep_for(1s);
+            std::this_thread::sleep_for(100ms);
         }
     }
     sink->send({hr_clock::now(), FrameType::FINISH, 0});

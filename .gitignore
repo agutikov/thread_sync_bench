@@ -8,3 +8,5 @@ thread_sync_bench
 bench
 .vscode
 *_threads
+*-threads
+
