@@ -10,6 +10,6 @@ set ylabel "mean latency (ns)"
 
 set grid mxtics mytics xtics ytics lt 1 lc rgb 'gray70', lt 1 lc rgb 'gray90'
 
-plot for [file in list] file with linespoint title file
+plot for [file in list] file with linespoint lw 2 ps 2 title file
 
 #pause -1
