@@ -6,10 +6,12 @@
 #include <chrono>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <memory>
 #include <tuple>
 #include <functional>
+#include <map>
 
 
 using namespace std::chrono_literals;
@@ -44,40 +46,38 @@ struct sync_queue
 
 using hr_clock = std::chrono::high_resolution_clock;
 
+enum FrameType
+{
+    MSG,
+    BATCH_END,
+    FINISH
+};
+
 // 0-th - start time_point
-// 1-st - end mark (true - continue)
+// 1-st - frame type
 // 2-nd - frequency, objs/s
-using frame = std::tuple<hr_clock::time_point, bool, double>;
+using frame = std::tuple<hr_clock::time_point, FrameType, double>;
 
 using queue = sync_queue<frame>;
 
 
-size_t count_from_delay(size_t delay_ns)
-{
-    if (delay_ns <= 10000) {
-        return 1000;
-    }
-    if (delay_ns >= 1000000) {
-        return 10;
-    }
-    return 100000000 / delay_ns;
-}
-
-double freq_from_delay(size_t delay_ns)
-{
-    return 1000000000.0 / delay_ns;
-}
-
 void produce_batch(size_t delay, std::shared_ptr<queue> sink)
 {
     std::cerr << delay << std::endl;
-    size_t count = count_from_delay(delay);
+    size_t count = 1000000000 / (delay != 0 ? delay : 1);
+    // limit number of frames in banch - 10k
+    if (count > 10000) {
+        count = 10000;
+    }
+
+    auto started = hr_clock::now();
     while (count-- > 0) {
         if (delay > 0) {
             std::this_thread::sleep_for(delay * 1ns);
         }
-        sink->send({hr_clock::now(), true, freq_from_delay(delay)});
+        sink->send({hr_clock::now(), FrameType::MSG, delay});
     }
+    sink->send({started, FrameType::BATCH_END, delay});
 }
 
 void producer_worker(std::shared_ptr<queue> sink)
@@ -89,24 +89,35 @@ void producer_worker(std::shared_ptr<queue> sink)
             std::this_thread::sleep_for(1s);
         }
     }
-    sink->send({hr_clock::now(), false, 0});
+    sink->send({hr_clock::now(), FrameType::FINISH, 0});
     std::cerr << "prod exit" << std::endl;
 }
 
-// 0-th - ops/s
-// 1-nd - latency, us
+// 0-th - delay, ns
+// 1-nd - latency, ns
 std::vector<std::tuple<double, double>> results;
+
+// delay -> average throughput obj/s
+std::map<double, double> throughput;
 
 void consumer_worker(std::shared_ptr<queue> src)
 {
+    size_t received = 0;
     while (true) {
         auto x = src->recv();
-        if (!std::get<1>(x)) {
+        auto stop = hr_clock::now();
+        received++;
+        std::chrono::duration<double, std::nano> latency = stop - std::get<0>(x);
+        if (std::get<1>(x) == FrameType::MSG) {
+            results.emplace_back(std::get<2>(x), latency.count());
+        }
+        if (std::get<1>(x) == FrameType::BATCH_END) {
+            throughput.emplace(std::get<2>(x), ((double)received) * 1000000000 / latency.count());
+            received = 0;
+        }
+        if (std::get<1>(x) == FrameType::FINISH) {
             break;
         }
-        auto stop = hr_clock::now();
-        std::chrono::duration<double, std::micro> latency = stop - std::get<0>(x);
-        results.emplace_back(freq_from_delay(std::get<2>(x)), latency.count());
     }
     std::cerr << "cons exit" << std::endl;
 }
@@ -116,7 +127,7 @@ void pipe_worker(std::shared_ptr<queue> src, std::shared_ptr<queue> sink)
     while (true) {
         auto x = src->recv();
         sink->send(x);
-        if (!std::get<1>(x)) {
+        if (std::get<1>(x) == FrameType::FINISH) {
             break;
         }
     }
@@ -124,7 +135,7 @@ void pipe_worker(std::shared_ptr<queue> src, std::shared_ptr<queue> sink)
 }
 
 
-void run_benchmark(int n_threads)
+void run_benchmark(int n_threads, std::string latency_filename, std::string throughput_filename)
 {
     auto q1 = std::make_shared<queue>();
 
@@ -147,10 +158,19 @@ void run_benchmark(int n_threads)
     }
     consumer_thread.join();
 
+    std::ofstream lat_of;
+    lat_of.open(latency_filename);
     for (const auto& r : results) {
-        std::cout << std::get<0>(r) << " " << std::get<1>(r) << std::endl;
+        lat_of << std::get<0>(r) << " " << std::get<1>(r) << std::endl;
     }
     results.clear();
+
+    std::ofstream thr_of;
+    thr_of.open(throughput_filename);
+    for (const auto& [d, thr] : throughput) {
+        thr_of << d << " " << thr << std::endl;
+    }
+    throughput.clear();
 }
 
 
@@ -158,7 +178,7 @@ int main(int argc, const char* argv[])
 {
     int n_threads = strtol(argv[1], 0, 0);
 
-    run_benchmark(n_threads);
+    run_benchmark(n_threads, argv[2], argv[3]);
 
     return 0;
 }
