@@ -12,11 +12,8 @@
 #include <tuple>
 #include <functional>
 #include <map>
-#include <string_view>
-#include <filesystem>
 
 
-namespace fs = std::filesystem;
 using namespace std::chrono_literals;
 
 
@@ -152,7 +149,7 @@ void pipe_worker(std::shared_ptr<queue> src, std::shared_ptr<queue> sink)
 }
 
 
-void run_benchmark(int n_threads, fs::path latency_filename, fs::path throughput_filename)
+void run_benchmark(int n_threads, const std::string& latency_filename, const std::string& throughput_filename)
 {
     auto q1 = std::make_shared<queue>();
 
@@ -195,10 +192,16 @@ int main(int argc, const char* argv[])
 {
     for (int i = 0; i < 1000; i++) {
         auto t1 = hr_clock::now();
-        std::chrono::duration<double, std::nano> latency = t1 - hr_clock::now();
-        min_wait_ns += latency.count();
+        auto t2 = hr_clock::now();
+        if (t2 > t1) {
+            std::chrono::duration<double, std::nano> latency = t2 - t1;
+            min_wait_ns += latency.count();
+        } else {
+            i++;
+        }
     }
     min_wait_ns /= 1000;
+    printf("%ld\n", min_wait_ns);
 
     int n_threads = strtol(argv[1], 0, 0);
 
