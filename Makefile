@@ -19,7 +19,7 @@ bench: $(DATA_FILES)
 stats: $(MEAN_FILES)
 
 $(DATA_FILES): %: thread_sync_bench
-	./thread_sync_bench $(@:latency_%_threads=%) $@ $(@:latency_%_threads=throughput_%_threads)
+	numactl --cpunodebind=0 --membind=0 -- ./thread_sync_bench $(@:latency_%_threads=%) $@ $(@:latency_%_threads=throughput_%_threads)
 
 $(MEAN_FILES): mean_%_threads: latency_%_threads
 	python3 ./stats.py $< $@ \

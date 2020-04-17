@@ -64,18 +64,18 @@ using queue = sync_queue<frame>;
 void wait(size_t ns)
 {
     if (ns <= 100) {
-        // throuhgput > 10M/s
+        // throuhgput > 10M obj/s
         return;
     } else if (ns <= 2000) {
-        // throuhgput > 500k/s
-        volatile size_t counter = ns / 50;
+        // throuhgput > 500k obj/s
+        volatile size_t counter = ns / 2;
         while (counter--);
     } else if (ns < 100000) {
-        // throuhgput > 10k/s
+        // throuhgput > 10k obj/s
         auto started = hr_clock::now();
         while ((hr_clock::now() - started) < ns * 1ns) ;
     } else {
-        // throuhgput < 10k/s
+        // throuhgput < 10k obj/s
         std::this_thread::sleep_for(ns * 1ns);
     }
 }
