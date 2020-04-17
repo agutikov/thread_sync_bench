@@ -55,7 +55,7 @@ enum FrameType
 
 // 0-th - start time_point
 // 1-st - frame type
-// 2-nd - frequency, objs/s
+// 2-nd - throughput, objs/s
 using frame = std::tuple<hr_clock::time_point, FrameType, double>;
 
 using queue = sync_queue<frame>;
@@ -76,28 +76,28 @@ void wait(size_t ns)
     }
 }
 
-#define MAX_BATCH_SIZE 10000
+#define MAX_BATCH_SIZE 1000
 
-void produce_batch(size_t delay, std::shared_ptr<queue> sink)
+void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
 {
-    std::cerr << delay << std::endl;
-    size_t count = 1000000000 / (delay != 0 ? delay : 1);
+    std::cerr << throughput << std::endl;
+    size_t delay = 1000000000 / throughput;
+    size_t count = throughput;
     if (count > MAX_BATCH_SIZE) {
         count = MAX_BATCH_SIZE;
     }
 
     auto started = hr_clock::now();
     while (count-- > 0) {
-        sink->send({hr_clock::now(), FrameType::MSG, delay});
+        sink->send({hr_clock::now(), FrameType::MSG, throughput});
         wait(delay);
     }
-    sink->send({started, FrameType::BATCH_END, delay});
+    sink->send({started, FrameType::BATCH_END, throughput});
 }
 
 void producer_worker(std::shared_ptr<queue> sink)
 {
-    produce_batch(0, sink);
-    for (size_t d1 : {10, 100, 1000, 10000, 100000, 1000000, 10000000}) {
+    for (size_t d1 : {100, 1000, 10000, 100000, 1000000, 1000000}) {
         for (size_t d2 : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
             produce_batch(d1*d2, sink);
             std::this_thread::sleep_for(100ms);
@@ -107,11 +107,11 @@ void producer_worker(std::shared_ptr<queue> sink)
     std::cerr << "prod exit" << std::endl;
 }
 
-// 0-th - delay, ns
+// 0-th - throughput, ns
 // 1-nd - latency, ns
 std::vector<std::tuple<double, double>> results;
 
-// delay -> average throughput obj/s
+// desired throughput -> resulting average throughput obj/s
 std::map<double, double> throughput;
 
 void consumer_worker(std::shared_ptr<queue> src)
@@ -197,7 +197,7 @@ int main(int argc, const char* argv[])
             std::chrono::duration<double, std::nano> latency = t2 - t1;
             min_wait_ns += latency.count();
         } else {
-            i++;
+            i--;
         }
     }
     min_wait_ns /= 1000;

@@ -6,7 +6,7 @@ set log x
 set log y
 
 
-set xlabel "delay between producer send (ns)"
+set xlabel "desired throughput (objs/s)"
 set ylabel "latency (ns)"
 
 set grid mxtics mytics xtics ytics lt 1 lc rgb 'gray70', lt 1 lc rgb 'gray90'
