@@ -65,10 +65,10 @@ size_t min_wait_ns = 0;
 
 void wait(size_t ns)
 {
-    if (ns < min_wait_ns / 2) {
+    if (ns < min_wait_ns) {
         return;
     }
-    if (ns > 100000) {
+    if (ns > 100*1000) {
         std::this_thread::sleep_for(ns * 1ns);
     } else {
         auto started = hr_clock::now();
@@ -76,12 +76,12 @@ void wait(size_t ns)
     }
 }
 
-#define MAX_BATCH_SIZE 1000
+#define MAX_BATCH_SIZE (1000*1000)
 
 void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
 {
     std::cerr << throughput << std::endl;
-    size_t delay = 1000000000 / throughput;
+    size_t delay_ns = 1000*1000*1000 / throughput;
     size_t count = throughput;
     if (count > MAX_BATCH_SIZE) {
         count = MAX_BATCH_SIZE;
@@ -90,19 +90,21 @@ void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
     auto started = hr_clock::now();
     while (count-- > 0) {
         sink->send({hr_clock::now(), FrameType::MSG, throughput});
-        wait(delay);
+        wait(delay_ns);
     }
     sink->send({started, FrameType::BATCH_END, throughput});
 }
 
 void producer_worker(std::shared_ptr<queue> sink)
 {
-    for (size_t d1 : {100, 1000, 10000, 100000, 1000000, 1000000}) {
+    for (size_t d1 : {100, 1000, 10*1000, 100*1000, 1000*1000}) {
         for (size_t d2 : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
             produce_batch(d1*d2, sink);
-            std::this_thread::sleep_for(100ms);
+            std::this_thread::sleep_for(1ms * (rand() % 1000));
         }
     }
+    produce_batch(10*1000*1000, sink);
+    std::this_thread::sleep_for(100ms);
     sink->send({hr_clock::now(), FrameType::FINISH, 0});
     std::cerr << "prod exit" << std::endl;
 }
@@ -190,7 +192,9 @@ void run_benchmark(int n_threads, const std::string& latency_filename, const std
 
 int main(int argc, const char* argv[])
 {
-    for (int i = 0; i < 1000; i++) {
+    srand(((uint64_t)(&argc)) % 1000000000);
+
+    for (int i = 0; i < 1000000; i++) {
         auto t1 = hr_clock::now();
         auto t2 = hr_clock::now();
         if (t2 > t1) {
@@ -200,7 +204,7 @@ int main(int argc, const char* argv[])
             i--;
         }
     }
-    min_wait_ns /= 1000;
+    min_wait_ns /= 1000000;
     printf("%ld\n", min_wait_ns);
 
     int n_threads = strtol(argv[1], 0, 0);
