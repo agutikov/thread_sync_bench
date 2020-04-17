@@ -61,22 +61,26 @@ using frame = std::tuple<hr_clock::time_point, FrameType, double>;
 using queue = sync_queue<frame>;
 
 
-size_t min_wait_ns = 0;
-
 void wait(size_t ns)
 {
-    if (ns < min_wait_ns) {
+    if (ns <= 100) {
+        // throuhgput > 10M/s
         return;
-    }
-    if (ns > 100*1000) {
-        std::this_thread::sleep_for(ns * 1ns);
-    } else {
+    } else if (ns <= 2000) {
+        // throuhgput > 500k/s
+        volatile size_t counter = ns / 50;
+        while (counter--);
+    } else if (ns < 100000) {
+        // throuhgput > 10k/s
         auto started = hr_clock::now();
         while ((hr_clock::now() - started) < ns * 1ns) ;
+    } else {
+        // throuhgput < 10k/s
+        std::this_thread::sleep_for(ns * 1ns);
     }
 }
 
-#define MAX_BATCH_SIZE (1000*1000)
+#define MAX_BATCH_SIZE (1000*10)
 
 void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
 {
@@ -97,7 +101,7 @@ void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
 
 void producer_worker(std::shared_ptr<queue> sink)
 {
-    for (size_t d1 : {100, 1000, 10*1000, 100*1000, 1000*1000}) {
+    for (size_t d1 : {10, 100, 1000, 10*1000, 100*1000, 1000*1000}) {
         for (size_t d2 : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
             produce_batch(d1*d2, sink);
             std::this_thread::sleep_for(1ms * (rand() % 1000));
@@ -193,19 +197,6 @@ void run_benchmark(int n_threads, const std::string& latency_filename, const std
 int main(int argc, const char* argv[])
 {
     srand(((uint64_t)(&argc)) % 1000000000);
-
-    for (int i = 0; i < 1000000; i++) {
-        auto t1 = hr_clock::now();
-        auto t2 = hr_clock::now();
-        if (t2 > t1) {
-            std::chrono::duration<double, std::nano> latency = t2 - t1;
-            min_wait_ns += latency.count();
-        } else {
-            i--;
-        }
-    }
-    min_wait_ns /= 1000000;
-    printf("%ld\n", min_wait_ns);
 
     int n_threads = strtol(argv[1], 0, 0);
 
