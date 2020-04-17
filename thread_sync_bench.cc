@@ -12,8 +12,11 @@
 #include <tuple>
 #include <functional>
 #include <map>
+#include <string_view>
+#include <filesystem>
 
 
+namespace fs = std::filesystem;
 using namespace std::chrono_literals;
 
 
@@ -61,9 +64,11 @@ using frame = std::tuple<hr_clock::time_point, FrameType, double>;
 using queue = sync_queue<frame>;
 
 
+size_t min_wait_ns = 0;
+
 void wait(size_t ns)
 {
-    if (ns == 0) {
+    if (ns < min_wait_ns / 2) {
         return;
     }
     if (ns > 100000) {
@@ -74,7 +79,7 @@ void wait(size_t ns)
     }
 }
 
-#define MAX_BATCH_SIZE 1000
+#define MAX_BATCH_SIZE 10000
 
 void produce_batch(size_t delay, std::shared_ptr<queue> sink)
 {
@@ -147,7 +152,7 @@ void pipe_worker(std::shared_ptr<queue> src, std::shared_ptr<queue> sink)
 }
 
 
-void run_benchmark(int n_threads, std::string latency_filename, std::string throughput_filename)
+void run_benchmark(int n_threads, fs::path latency_filename, fs::path throughput_filename)
 {
     auto q1 = std::make_shared<queue>();
 
@@ -188,6 +193,13 @@ void run_benchmark(int n_threads, std::string latency_filename, std::string thro
 
 int main(int argc, const char* argv[])
 {
+    for (int i = 0; i < 1000; i++) {
+        auto t1 = hr_clock::now();
+        std::chrono::duration<double, std::nano> latency = t1 - hr_clock::now();
+        min_wait_ns += latency.count();
+    }
+    min_wait_ns /= 1000;
+
     int n_threads = strtol(argv[1], 0, 0);
 
     run_benchmark(n_threads, argv[2], argv[3]);
