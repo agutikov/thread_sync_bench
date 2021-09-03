@@ -180,13 +180,16 @@ void run_benchmark(int n_threads, const std::string& latency_filename, const std
 
     std::ofstream lat_of;
     lat_of.open(latency_filename);
-    for (const auto& r : results) {
+    std::cerr << "save latency to " << latency_filename << std::endl;
+    for (const auto &r : results)
+    {
         lat_of << std::get<0>(r) << " " << std::get<1>(r) << std::endl;
     }
     results.clear();
 
     std::ofstream thr_of;
     thr_of.open(throughput_filename);
+    std::cerr << "save throughput to " << throughput_filename << std::endl;
     for (const auto& [d, thr] : throughput) {
         thr_of << d << " " << thr << std::endl;
     }
