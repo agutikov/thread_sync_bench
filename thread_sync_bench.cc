@@ -109,7 +109,7 @@ void producer_worker(std::shared_ptr<queue> sink)
     std::cerr << "prod exit" << std::endl;
 }
 
-// 0-th - throughput, ns
+// 0-th - throughput, obj/s
 // 1-nd - latency, ns
 std::vector<std::tuple<double, double>> results;
 

@@ -11,3 +11,5 @@ bench
 *-threads
 
 sender_receiver
+coro_samples
+boost_fiber_bench

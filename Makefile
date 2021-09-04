@@ -7,16 +7,21 @@ LAT_OPS_FILES := $(N_THREADS:%=lat-ops-%-threads)
 
 CXX=g++-11
 
+CXX_FLAGS=-Werror -O0 -ggdb -std=c++20 -lpthread -pthread -fcoroutines
+# -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive
 
-.PHONY: clean png all
 
-all: thread_sync_bench sender_receiver
+all: thread_sync_bench coro_samples boost_fiber_bench
 
-sender_receiver: sender_receiver.cpp
-	$(CXX) -Werror -O0 -ggdb -lpthread -pthread -std=c++20 -fcoroutines $^ -o $@
+coro_samples: coro_samples.cc
+	$(CXX) $(CXX_FLAGS) $^ -o $@
 
 thread_sync_bench: thread_sync_bench.cc
-	$(CXX) -Werror -O2 -std=c++17 -static -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive $^ -o $@
+	$(CXX) $(CXX_FLAGS)  $^ -o $@
+
+boost_fiber_bench: boost_fiber_bench.cc
+	$(CXX) $(CXX_FLAGS) -lboost_fiber -lboost_context $^ -o $@
+
 
 png: $(PNG_FILES) lat_ops.png
 

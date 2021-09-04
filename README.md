@@ -1,12 +1,5 @@
 
 TODO: scaling_governor: performance, ondemand
-TODO: lost wakeup
-
-TODO: syncronization with coroutines
-https://blog.panicsoftware.com/coroutines-introduction/
-https://blog.panicsoftware.com/your-first-coroutine/
-https://www.modernescpp.com/index.php/c-20-coroutines-with-cppcoro
-https://www.modernescpp.com/index.php/c-20-thread-synchronization-with-coroutines
 
 
 
@@ -14,7 +7,7 @@ Conclusion:
 
 1. Yes, pipeline system under load shows better performance than cold one, sometimes 10x lower latency.
 2. CPU frequency scaling give us x2 higher latency.
-3. 
+3.
 4. Pracical limit of throughput of queue synchonized with mutex and condition_variable is about **1M items/s**.
 5. If you need more throughput you should group items in batches and transfer multiple items at onece.
 6. Result of tests with 1-to-10 threads has no increase of latency at high throughput - this is because my CPU has 16 cores.
@@ -26,5 +19,17 @@ Conclusion:
 
 
 
+
+TODO: Test the same with userspace threads:
+- boost Fiber
+- cppcoro https://github.com/lewissbaker/cppcoro
+- seastar http://docs.seastar.io/master/index.html
+- GNU Portable Threads https://www.gnu.org/software/pth/
+- libgo https://github.com/yyzybb537/libgo/
+- co https://github.com/idealvin/co
+
+
+
+TODO: test the same with Golang
 
 
