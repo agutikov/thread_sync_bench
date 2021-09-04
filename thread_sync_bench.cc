@@ -65,7 +65,9 @@ void wait(size_t ns)
     } else if (ns <= 2000) {
         // throuhgput > 500k obj/s
         volatile size_t counter = ns / 2;
-        while (counter--) { }
+        while (counter) {
+            counter = counter - 1;
+        }
     } else if (ns < 100000) {
         // throuhgput > 10k obj/s
         auto started = hr_clock::now();
@@ -81,7 +83,7 @@ void wait(size_t ns)
 void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
 {
     std::cerr << throughput << std::endl;
-    size_t delay_ns = 1000 * 1000 * 1000 / throughput;
+    size_t delay_ns = 1000'000'000 / throughput;
     size_t count = throughput;
     if (count > MAX_BATCH_SIZE) {
         count = MAX_BATCH_SIZE;
@@ -97,13 +99,13 @@ void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
 
 void producer_worker(std::shared_ptr<queue> sink)
 {
-    for (size_t d1 : {10, 100, 1000, 10 * 1000, 100 * 1000, 1000 * 1000}) {
-        for (size_t d2 : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
+    for (size_t d1 : {10, 100, 1000, 10'000, 100'000, 1000'000}) {
+        for (size_t d2 : {1, 2, 5}) {
             produce_batch(d1 * d2, sink);
             std::this_thread::sleep_for(1ms * (rand() % 1000));
         }
     }
-    produce_batch(10 * 1000 * 1000, sink);
+    produce_batch(10'000'000, sink);
     std::this_thread::sleep_for(100ms);
     sink->send({hr_clock::now(), FrameType::FINISH, 0});
     std::cerr << "prod exit" << std::endl;
@@ -150,7 +152,7 @@ void pipe_worker(std::shared_ptr<queue> src, std::shared_ptr<queue> sink)
     std::cerr << "pipe exit" << std::endl;
 }
 
-void run_benchmark(int n_threads, const std::string& latency_filename, const std::string& throughput_filename)
+void run_benchmark(int n_queues, const std::string& latency_filename, const std::string& throughput_filename)
 {
     auto q1 = std::make_shared<queue>();
 
@@ -159,7 +161,8 @@ void run_benchmark(int n_threads, const std::string& latency_filename, const std
     std::vector<std::thread> threads;
     std::shared_ptr<queue> src = nullptr;
     std::shared_ptr<queue> sink = q1;
-    for (int i = 0; i < n_threads; i++) {
+
+    for (int i = 0; i < n_queues - 1; i++) {
         src = std::make_shared<queue>();
         threads.emplace_back(pipe_worker, src, sink);
         sink = src;
@@ -192,11 +195,11 @@ void run_benchmark(int n_threads, const std::string& latency_filename, const std
 
 int main(int argc, const char* argv[])
 {
-    srand(((uint64_t)(&argc)) % 1000000000);
+    srand(((uint64_t)(&argc)) % 1000'000'000);
 
-    int n_threads = strtol(argv[1], 0, 0);
+    int n_queues = strtol(argv[1], 0, 0);
 
-    run_benchmark(n_threads, argv[2], argv[3]);
+    run_benchmark(n_queues, argv[2], argv[3]);
 
     return 0;
 }

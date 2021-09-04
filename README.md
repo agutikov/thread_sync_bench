@@ -7,7 +7,6 @@ Conclusion:
 
 1. Yes, pipeline system under load shows better performance than cold one, sometimes 10x lower latency.
 2. CPU frequency scaling give us x2 higher latency.
-3.
 4. Pracical limit of throughput of queue synchonized with mutex and condition_variable is about **1M items/s**.
 5. If you need more throughput you should group items in batches and transfer multiple items at onece.
 6. Result of tests with 1-to-10 threads has no increase of latency at high throughput - this is because my CPU has 16 cores.
@@ -32,4 +31,4 @@ TODO: Test the same with userspace threads:
 
 TODO: test the same with Golang
 
-
+TODO: https://habr.com/ru/post/430672/
