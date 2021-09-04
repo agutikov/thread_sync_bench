@@ -1,0 +1,7 @@
+---
+BasedOnStyle: WebKit
+BreakBeforeBraces: Mozilla
+
+Cpp11BracedListStyle: true
+SpaceBeforeCpp11BracedList: false
+SpaceAfterTemplateKeyword: false

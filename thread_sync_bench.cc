@@ -1,21 +1,19 @@
 
-#include <mutex>
-#include <condition_variable>
-#include <thread>
-#include <queue>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
-#include <iostream>
 #include <fstream>
-#include <vector>
-#include <memory>
-#include <tuple>
 #include <functional>
+#include <iostream>
 #include <map>
-
+#include <memory>
+#include <mutex>
+#include <queue>
+#include <thread>
+#include <tuple>
+#include <vector>
 
 using namespace std::chrono_literals;
-
 
 template<typename T>
 struct sync_queue
@@ -35,14 +33,13 @@ struct sync_queue
     {
         std::unique_lock<std::mutex> lock(m);
         if (q.empty()) {
-            cv.wait(lock, [this](){ return !q.empty(); });
+            cv.wait(lock, [this]() { return !q.empty(); });
         }
         auto x = q.front();
         q.pop();
         return x;
     }
 };
-
 
 using hr_clock = std::chrono::high_resolution_clock;
 
@@ -60,7 +57,6 @@ using frame = std::tuple<hr_clock::time_point, FrameType, double>;
 
 using queue = sync_queue<frame>;
 
-
 void wait(size_t ns)
 {
     if (ns <= 100) {
@@ -69,23 +65,23 @@ void wait(size_t ns)
     } else if (ns <= 2000) {
         // throuhgput > 500k obj/s
         volatile size_t counter = ns / 2;
-        while (counter--);
+        while (counter--) { }
     } else if (ns < 100000) {
         // throuhgput > 10k obj/s
         auto started = hr_clock::now();
-        while ((hr_clock::now() - started) < ns * 1ns) ;
+        while ((hr_clock::now() - started) < ns * 1ns) { }
     } else {
         // throuhgput < 10k obj/s
         std::this_thread::sleep_for(ns * 1ns);
     }
 }
 
-#define MAX_BATCH_SIZE (1000*10)
+#define MAX_BATCH_SIZE (1000 * 10)
 
 void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
 {
     std::cerr << throughput << std::endl;
-    size_t delay_ns = 1000*1000*1000 / throughput;
+    size_t delay_ns = 1000 * 1000 * 1000 / throughput;
     size_t count = throughput;
     if (count > MAX_BATCH_SIZE) {
         count = MAX_BATCH_SIZE;
@@ -101,13 +97,13 @@ void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
 
 void producer_worker(std::shared_ptr<queue> sink)
 {
-    for (size_t d1 : {10, 100, 1000, 10*1000, 100*1000, 1000*1000}) {
+    for (size_t d1 : {10, 100, 1000, 10 * 1000, 100 * 1000, 1000 * 1000}) {
         for (size_t d2 : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
-            produce_batch(d1*d2, sink);
+            produce_batch(d1 * d2, sink);
             std::this_thread::sleep_for(1ms * (rand() % 1000));
         }
     }
-    produce_batch(10*1000*1000, sink);
+    produce_batch(10 * 1000 * 1000, sink);
     std::this_thread::sleep_for(100ms);
     sink->send({hr_clock::now(), FrameType::FINISH, 0});
     std::cerr << "prod exit" << std::endl;
@@ -154,7 +150,6 @@ void pipe_worker(std::shared_ptr<queue> src, std::shared_ptr<queue> sink)
     std::cerr << "pipe exit" << std::endl;
 }
 
-
 void run_benchmark(int n_threads, const std::string& latency_filename, const std::string& throughput_filename)
 {
     auto q1 = std::make_shared<queue>();
@@ -181,8 +176,7 @@ void run_benchmark(int n_threads, const std::string& latency_filename, const std
     std::ofstream lat_of;
     lat_of.open(latency_filename);
     std::cerr << "save latency to " << latency_filename << std::endl;
-    for (const auto &r : results)
-    {
+    for (const auto& r : results) {
         lat_of << std::get<0>(r) << " " << std::get<1>(r) << std::endl;
     }
     results.clear();
@@ -195,7 +189,6 @@ void run_benchmark(int n_threads, const std::string& latency_filename, const std
     }
     throughput.clear();
 }
-
 
 int main(int argc, const char* argv[])
 {
