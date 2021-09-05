@@ -11,6 +11,10 @@
 #include <thread>
 #include <tuple>
 #include <vector>
+#include <deque>
+#include <numeric>
+#include <unordered_map>
+
 
 #define MAX_BATCH_SIZE (100'000)
 
@@ -134,16 +138,59 @@ void producer_worker(std::shared_ptr<queue> sink)
     std::cerr << "prod exit" << std::endl;
 }
 
-struct result_t
+
+struct result_table_t
 {
-    double throughput_obj_s;
-    double latency_ns;
+    std::unordered_map<double, std::deque<double>> latencies_per_desired_throughput;
+
+    std::deque<double>& get_lats(double throughput)
+    {
+        auto it = latencies_per_desired_throughput.find(throughput);
+        if (it == latencies_per_desired_throughput.end()) {
+            return latencies_per_desired_throughput[throughput] = {};
+        }
+        return it->second;
+    }
+
+    // desired throughput -> resulting average throughput obj/s
+    std::map<size_t, double> throughput;
+
+    void clear()
+    {
+        latencies_per_desired_throughput.clear();
+        throughput.clear();
+    }
+
+    std::unordered_map<double, double> mean_latencies;
+    std::unordered_map<double, double> median_latencies;
+
+    void cals_stats()
+    {
+        double sum = 0.0;
+        for (auto& [throughput, lats] : latencies_per_desired_throughput) {
+            // mean
+            double sum = std::accumulate(lats.begin(), lats.end(), 0.0);
+            mean_latencies[throughput] = sum / lats.size();
+
+            // median
+            std::sort(lats.begin(), lats.end());
+            double median = 0;
+            size_t size = lats.size();
+            if (size > 0) {
+                if (size % 2 == 0) {
+                    median = (lats[size / 2 - 1] + lats[size / 2]) / 2;
+                } else {
+                    median = lats[size / 2];
+                }
+            }
+            median_latencies[throughput] = median;
+        }
+    }
+
 };
 
-std::vector<result_t> results;
+result_table_t results;
 
-// desired throughput -> resulting average throughput obj/s
-std::map<size_t, double> result_throughput;
 
 void consumer_worker(std::shared_ptr<queue> src)
 {
@@ -153,11 +200,13 @@ void consumer_worker(std::shared_ptr<queue> src)
         auto stop = hr_clock::now();
         received++;
         std::chrono::duration<double, std::nano> latency = stop - msg.create_timestamp;
+        double desired_throughput = msg.throughput;
         if (msg.type == FrameType::MSG) {
-            results.emplace_back(msg.throughput, latency.count());
+            results.get_lats(desired_throughput).push_back(latency.count());
         }
         if (msg.type == FrameType::BATCH_END) {
-            result_throughput.emplace(msg.throughput, ((double)received) * 1000000000 / latency.count());
+            double actual_throughput = ((double)received) * 1000000000 / latency.count();
+            results.throughput.emplace(desired_throughput, actual_throughput);
             received = 0;
         }
         if (msg.type == FrameType::FINISH) {
@@ -184,8 +233,10 @@ void dump_latency(const std::string& filename)
     std::ofstream lat_of;
     lat_of.open(filename);
     std::cerr << "save latency to " << filename << std::endl;
-    for (const auto& r : results) {
-        lat_of << r.throughput_obj_s << " " << r.latency_ns << std::endl;
+    for (const auto& [throughput, lats] : results.latencies_per_desired_throughput) {
+        for (auto latency : lats) {
+            lat_of << throughput << " " << latency << std::endl;
+        }
     }
 }
 
@@ -194,10 +245,12 @@ void dump_throughput(const std::string& filename)
     std::ofstream thr_of;
     thr_of.open(filename);
     std::cerr << "save result throughput table to " << filename << std::endl;
-    for (const auto& [d, thr] : result_throughput) {
+    for (const auto& [d, thr] : results.throughput) {
         thr_of << d << " " << thr << std::endl;
     }
 }
+
+
 
 thread_local static int thread_id = 0;
 
@@ -289,10 +342,8 @@ void run_benchmark(int n_queues, const std::string& latency_filename, const std:
     }
 
     dump_latency(latency_filename);
-    results.clear();
-
     dump_throughput(throughput_filename);
-    result_throughput.clear();
+    results.clear();
 }
 
 int main(int argc, const char* argv[])

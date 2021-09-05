@@ -7,7 +7,6 @@ TODO: all cmdline options
 TODO: common benchmark code and implementations:
     - threads:
       - mutexes
-      - handmade lockfree
       - boost lockfree
       - batches (w/o packing, just skip cv notifications)
     - boost fibers:
