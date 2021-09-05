@@ -138,10 +138,22 @@ void producer_worker(std::shared_ptr<queue> sink)
     std::cerr << "prod exit" << std::endl;
 }
 
+template<typename C>
+void dump_dict(const std::string& filename, const C& data)
+{
+    std::ofstream of;
+    of.open(filename);
+    std::cerr << "dump to " << filename << std::endl;
+    for (const auto& [k, v] : data) {
+        of << k << " " << v << std::endl;
+    }
+    of.close();
+}
+
 
 struct result_table_t
 {
-    std::unordered_map<double, std::deque<double>> latencies_per_desired_throughput;
+    std::unordered_map<size_t, std::deque<double>> latencies_per_desired_throughput;
 
     std::deque<double>& get_lats(double throughput)
     {
@@ -153,7 +165,7 @@ struct result_table_t
     }
 
     // desired throughput -> resulting average throughput obj/s
-    std::map<size_t, double> throughput;
+    std::unordered_map<size_t, double> throughput;
 
     void clear()
     {
@@ -161,10 +173,13 @@ struct result_table_t
         throughput.clear();
     }
 
-    std::unordered_map<double, double> mean_latencies;
-    std::unordered_map<double, double> median_latencies;
+    std::map<size_t, double> mean_latencies;
+    std::map<size_t, double> median_latencies;
 
-    void cals_stats()
+    std::map<double, double> mean_per_throughput;
+    std::map<double, double> median_per_throughput;
+
+    void calc_stats()
     {
         double sum = 0.0;
         for (auto& [throughput, lats] : latencies_per_desired_throughput) {
@@ -185,8 +200,36 @@ struct result_table_t
             }
             median_latencies[throughput] = median;
         }
+
+        for (const auto& [d, t] : throughput) {
+            mean_per_throughput[t] = mean_latencies.at(d);
+            median_per_throughput[t] = median_latencies.at(d);
+        }
     }
 
+    void dump(
+        const std::string& latency_filename,
+        const std::string& latency_mean_filename,
+        const std::string& latency_median_filename,
+        const std::string& latency_mean_per_throughput_filename,
+        const std::string& latency_median_per_throughput_filename
+    ) const
+    {
+        std::ofstream lat_of;
+        lat_of.open(latency_filename);
+        std::cerr << "save latencies to " << latency_filename << std::endl;
+        for (const auto& [throughput, lats] : latencies_per_desired_throughput) {
+            for (auto latency : lats) {
+                lat_of << throughput << " " << latency << std::endl;
+            }
+        }
+        lat_of.close();
+
+        dump_dict(latency_mean_filename, mean_latencies);
+        dump_dict(latency_median_filename, median_latencies);
+        dump_dict(latency_mean_per_throughput_filename, mean_per_throughput);
+        dump_dict(latency_median_per_throughput_filename, median_per_throughput);
+    }
 };
 
 result_table_t results;
@@ -200,13 +243,12 @@ void consumer_worker(std::shared_ptr<queue> src)
         auto stop = hr_clock::now();
         received++;
         std::chrono::duration<double, std::nano> latency = stop - msg.create_timestamp;
-        double desired_throughput = msg.throughput;
         if (msg.type == FrameType::MSG) {
-            results.get_lats(desired_throughput).push_back(latency.count());
+            results.get_lats(msg.throughput).push_back(latency.count());
         }
         if (msg.type == FrameType::BATCH_END) {
             double actual_throughput = ((double)received) * 1000000000 / latency.count();
-            results.throughput.emplace(desired_throughput, actual_throughput);
+            results.throughput.emplace(msg.throughput, actual_throughput);
             received = 0;
         }
         if (msg.type == FrameType::FINISH) {
@@ -227,29 +269,6 @@ void pipe_worker(std::shared_ptr<queue> src, std::shared_ptr<queue> sink)
     }
     std::cerr << "pipe exit" << std::endl;
 }
-
-void dump_latency(const std::string& filename)
-{
-    std::ofstream lat_of;
-    lat_of.open(filename);
-    std::cerr << "save latency to " << filename << std::endl;
-    for (const auto& [throughput, lats] : results.latencies_per_desired_throughput) {
-        for (auto latency : lats) {
-            lat_of << throughput << " " << latency << std::endl;
-        }
-    }
-}
-
-void dump_throughput(const std::string& filename)
-{
-    std::ofstream thr_of;
-    thr_of.open(filename);
-    std::cerr << "save result throughput table to " << filename << std::endl;
-    for (const auto& [d, thr] : results.throughput) {
-        thr_of << d << " " << thr << std::endl;
-    }
-}
-
 
 
 thread_local static int thread_id = 0;
@@ -305,7 +324,7 @@ void stop_scheduler_threads()
 
 bool multi_thread = true;
 
-void run_benchmark(int n_queues, const std::string& latency_filename, const std::string& throughput_filename)
+void run_benchmark(int n_queues)
 {
     auto q1 = std::make_shared<queue>(QUEUE_CAPACITY);
 
@@ -340,10 +359,6 @@ void run_benchmark(int n_queues, const std::string& latency_filename, const std:
         }
         consumer_fiber.join();
     }
-
-    dump_latency(latency_filename);
-    dump_throughput(throughput_filename);
-    results.clear();
 }
 
 int main(int argc, const char* argv[])
@@ -352,7 +367,9 @@ int main(int argc, const char* argv[])
 
     int n_queues = strtol(argv[1], 0, 0);
 
-    run_benchmark(n_queues, argv[2], argv[3]);
+    run_benchmark(n_queues);
+    results.calc_stats();
+    results.dump(argv[2], argv[3], argv[4], argv[5], argv[6]);
 
     return 0;
 }

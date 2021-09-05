@@ -29,23 +29,17 @@ thread_sync_bench: thread_sync_bench.cc
 boost_fiber_bench: boost_fiber_bench.cc
 	$(CXX) $(CXX_FLAGS) $^ -o $@ $(LIBS) $(BOOST_LIBS)
 
-
-png: $(PNG_FILES) median_lat_ops.png mean_lat_ops.png
+report: $(PNG_FILES) median_lat_ops.png mean_lat_ops.png
 
 bench: $(DATA_FILES)
 
-stats: $(MEAN_FILES)
-
 $(DATA_FILES): %: $(BENCH)
 #	numactl --cpunodebind=0 --membind=0 --
-	./$(BENCH) $(@:latency_%_queues.csv=%) $@ $(@:latency_%_queues.csv=throughput_%_queues.csv)
-
-$(MEAN_FILES): mean_%_queues.csv: latency_%_queues.csv
-	python3 ./stats.py $< $@ \
-	$(@:mean_%_queues.csv=median_%_queues.csv) \
-	$(@:mean_%_queues.csv=throughput_%_queues.csv) \
-	$(@:mean_%_queues.csv=median-lat-ops-%-queues.csv) \
-	$(@:mean_%_queues.csv=mean-lat-ops-%-queues.csv)
+	./$(BENCH) $(@:latency_%_queues.csv=%) $@ \
+	$(@:latency_%_queues.csv=mean_%_queues.csv) \
+	$(@:latency_%_queues.csv=median_%_queues.csv) \
+	$(@:latency_%_queues.csv=mean-lat-ops-%-queues.csv) \
+	$(@:latency_%_queues.csv=median-lat-ops-%-queues.csv)
 
 $(PNG_FILES): chart_%_queues.png: mean_%_queues.csv
 	gnuplot \
