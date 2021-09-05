@@ -15,26 +15,3 @@ Conclusion:
 9.  Optimal queue (synchronized with mutex) throughput is 10k - 100k items/s.
 10. Batching is not only single way to increase throughput, I expect lockless queue can improve this case also.
 
-
-TODO: calculate stats in C++
-TODO: common benchmark code and implementations
-
-
-TODO: Test the same with userspace threads:
-- boost Fiber single thread
-- boost Fiber multithread 2C/4T
-- cppcoro https://github.com/lewissbaker/cppcoro
-- seastar http://docs.seastar.io/master/index.html
-- GNU Portable Threads https://www.gnu.org/software/pth/
-- libgo https://github.com/yyzybb537/libgo/
-- co https://github.com/idealvin/co
-
-
-TODO: threads + handmade and boost lockfree single producer single consumer queue
-
-TODO: test the same with Golang
-
-TODO: https://habr.com/ru/post/430672/
-
-TODO: scaling_governor: performance, ondemand
-
