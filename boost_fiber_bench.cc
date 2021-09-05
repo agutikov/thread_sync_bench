@@ -8,9 +8,9 @@
 #include <map>
 #include <memory>
 #include <queue>
+#include <thread>
 #include <tuple>
 #include <vector>
-#include <thread>
 
 #define MAX_BATCH_SIZE (100'000)
 
@@ -18,7 +18,6 @@
 
 using namespace std::chrono_literals;
 using hr_clock = std::chrono::high_resolution_clock;
-
 
 enum FrameType
 {
@@ -36,22 +35,38 @@ struct msg_t
 
 using queue = boost::fibers::buffered_channel<msg_t>;
 
-void wait(std::chrono::nanoseconds ns)
+constexpr bool produce_batches = false;
+
+struct waiter
 {
-    if (ns <= 1us) {
-        // throuhgput >= 1M obj/s
-        boost::this_fiber::yield();
-    } else {
-        boost::this_fiber::sleep_for(ns);
+    size_t skipped_yields = 0;
+
+    void wait(std::chrono::nanoseconds ns)
+    {
+        if (ns <= 1us) {
+            // throuhgput >= 1M obj/s
+            if constexpr (produce_batches) {
+                // should act like batch processing
+                // 100k batches/s
+                size_t to_skip = 10'000 / (ns.count() + 1);
+                if (skipped_yields++ >= to_skip) {
+                    skipped_yields = 0;
+                    boost::this_fiber::yield();
+                }
+            } else {
+                boost::this_fiber::yield();
+            }
+        } else {
+            boost::this_fiber::sleep_for(ns);
+        }
     }
-}
+};
 
 void send(queue& q, msg_t&& msg)
 {
     while (true) {
         auto channel_state = q.push(msg);
-        switch (channel_state)
-        {
+        switch (channel_state) {
         case boost::fibers::channel_op_status::success:
             return;
         case boost::fibers::channel_op_status::full:
@@ -73,8 +88,7 @@ msg_t recv(queue& q)
     msg_t msg;
     while (true) {
         auto channel_state = q.pop(msg);
-        switch (channel_state)
-        {
+        switch (channel_state) {
         case boost::fibers::channel_op_status::success:
             return msg;
         case boost::fibers::channel_op_status::empty:
@@ -91,18 +105,18 @@ msg_t recv(queue& q)
     }
 }
 
-
 void produce_batch(size_t throughput, std::shared_ptr<queue> sink)
 {
     std::cerr << throughput << std::endl;
     size_t delay_ns = 1000'000'000 / throughput;
     size_t count = MAX_BATCH_SIZE;
+    waiter w;
 
     auto started = hr_clock::now();
     auto stop_before = started + 1s;
     while (hr_clock::now() < stop_before && count--) {
         send(*sink, {hr_clock::now(), FrameType::MSG, throughput});
-        wait(delay_ns * 1ns);
+        w.wait(delay_ns * 1ns);
     }
     send(*sink, {started, FrameType::BATCH_END, throughput});
 }
@@ -165,7 +179,6 @@ void pipe_worker(std::shared_ptr<queue> src, std::shared_ptr<queue> sink)
     std::cerr << "pipe exit" << std::endl;
 }
 
-
 void dump_latency(const std::string& filename)
 {
     std::ofstream lat_of;
@@ -186,35 +199,56 @@ void dump_throughput(const std::string& filename)
     }
 }
 
-#if 0
-thread_local static int thread_id = -1;
+thread_local static int thread_id = 0;
+
+void use_scheduler()
+{
+    unsigned int thread_count = std::thread::hardware_concurrency();
+    printf("thread-%d: use scheduler\n", thread_id);
+    // thread registers itself at work-stealing scheduler
+    boost::fibers::use_scheduling_algorithm<boost::fibers::algo::work_stealing>(thread_count);
+}
+
+static bool done = false;
+static std::mutex worker_threads_mutex{};
+static boost::fibers::condition_variable_any worker_threads_cv{};
 
 void worker(uint32_t thread_count, int id)
 {
     thread_id = id;
 
-    // thread registers itself at work-stealing scheduler
-    boost::fibers::use_scheduling_algorithm< boost::fibers::algo::work_stealing >(thread_count);
+    use_scheduler();
+
+    std::unique_lock<std::mutex> lock(worker_threads_mutex);
+    worker_threads_cv.wait(lock, []() { return done; });
 
     printf("Exit worker thread %d function\n", thread_id);
 }
 
-std::vector<std::thread> threads;
+std::vector<std::thread> worker_threads;
 
-void run_scheduler_threads()
+void start_scheduler_threads()
 {
     unsigned int thread_count = std::thread::hardware_concurrency();
     printf("hardware concurrency: %d\n", thread_count);
     for (int i = 1; i < thread_count; i++) {
-        threads.emplace_back(worker, thread_count, i);
+        worker_threads.emplace_back(worker, thread_count, i);
     }
-    worker(thread_count, 0);
+}
 
-    for(auto& t : threads) {
+void stop_scheduler_threads()
+{
+    std::unique_lock<std::mutex> lock(worker_threads_mutex);
+    done = true;
+    lock.unlock();
+    worker_threads_cv.notify_all();
+
+    for (auto& t : worker_threads) {
         t.join();
     }
 }
-#endif
+
+bool multi_thread = true;
 
 void run_benchmark(int n_queues, const std::string& latency_filename, const std::string& throughput_filename)
 {
@@ -234,13 +268,23 @@ void run_benchmark(int n_queues, const std::string& latency_filename, const std:
 
     boost::fibers::fiber producer_fiber(producer_worker, sink);
 
-    producer_fiber.join();
-    for (auto& pipe_fiber : pipe_fibers) {
-        pipe_fiber.join();
+    if (multi_thread) {
+        producer_fiber.detach();
+        for (auto& pipe_fiber : pipe_fibers) {
+            pipe_fiber.detach();
+        }
+        start_scheduler_threads();
+        use_scheduler();
+        consumer_fiber.join();
+        stop_scheduler_threads();
+    } else {
+        // execute all fibers in the single main thread
+        producer_fiber.join();
+        for (auto& pipe_fiber : pipe_fibers) {
+            pipe_fiber.join();
+        }
+        consumer_fiber.join();
     }
-    consumer_fiber.join();
-
-    //run_scheduler_threads();
 
     dump_latency(latency_filename);
     results.clear();
@@ -248,7 +292,6 @@ void run_benchmark(int n_queues, const std::string& latency_filename, const std:
     dump_throughput(throughput_filename);
     result_throughput.clear();
 }
-
 
 int main(int argc, const char* argv[])
 {

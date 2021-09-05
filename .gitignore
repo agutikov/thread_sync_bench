@@ -3,13 +3,12 @@ thread_sync_bench
 *.txt
 
 *.png
+*.csv
+
 \#*\#
 
 bench
 .vscode
-*_threads
-*-threads
 
-sender_receiver
 coro_samples
 boost_fiber_bench
