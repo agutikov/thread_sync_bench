@@ -35,7 +35,7 @@ struct msg_t
 
 using queue = boost::fibers::buffered_channel<msg_t>;
 
-constexpr bool produce_batches = false;
+constexpr bool produce_batches = true;
 
 struct waiter
 {
@@ -203,10 +203,12 @@ thread_local static int thread_id = 0;
 
 void use_scheduler()
 {
-    unsigned int thread_count = std::thread::hardware_concurrency();
-    printf("thread-%d: use scheduler\n", thread_id);
     // thread registers itself at work-stealing scheduler
+    unsigned int thread_count = std::thread::hardware_concurrency();
     boost::fibers::use_scheduling_algorithm<boost::fibers::algo::work_stealing>(thread_count);
+    //boost::fibers::use_scheduling_algorithm<boost::fibers::algo::round_robin>();
+    //boost::fibers::use_scheduling_algorithm<boost::fibers::algo::shared_work>();
+    printf("thread-%d: use scheduler\n", thread_id);
 }
 
 static bool done = false;

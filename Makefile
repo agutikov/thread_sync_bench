@@ -5,7 +5,9 @@ BENCH := boost_fiber_bench
 DATA_FILES := $(N_QUEUES:%=latency_%_queues.csv)
 MEAN_FILES := $(N_QUEUES:%=mean_%_queues.csv)
 PNG_FILES := $(N_QUEUES:%=chart_%_queues.png)
-LAT_OPS_FILES := $(N_QUEUES:%=lat-ops-%-queues.csv)
+# following names are with minuses instead of underscores because of gnuplot
+MEDIAN_LAT_OPS_FILES := $(N_QUEUES:%=median-lat-ops-%-queues.csv)
+MEAN_LAT_OPS_FILES := $(N_QUEUES:%=mean-lat-ops-%-queues.csv)
 
 CXX=g++-11
 
@@ -28,7 +30,7 @@ boost_fiber_bench: boost_fiber_bench.cc
 	$(CXX) $(CXX_FLAGS) $^ -o $@ $(LIBS) $(BOOST_LIBS)
 
 
-png: $(PNG_FILES) lat_ops.png
+png: $(PNG_FILES) median_lat_ops.png mean_lat_ops.png
 
 bench: $(DATA_FILES)
 
@@ -42,7 +44,8 @@ $(MEAN_FILES): mean_%_queues.csv: latency_%_queues.csv
 	python3 ./stats.py $< $@ \
 	$(@:mean_%_queues.csv=median_%_queues.csv) \
 	$(@:mean_%_queues.csv=throughput_%_queues.csv) \
-	$(@:mean_%_queues.csv=lat-ops-%-queues.csv)
+	$(@:mean_%_queues.csv=median-lat-ops-%-queues.csv) \
+	$(@:mean_%_queues.csv=mean-lat-ops-%-queues.csv)
 
 $(PNG_FILES): chart_%_queues.png: mean_%_queues.csv
 	gnuplot \
@@ -51,8 +54,11 @@ $(PNG_FILES): chart_%_queues.png: mean_%_queues.csv
 	-e "median='$(<:mean_%_queues.csv=median_%_queues.csv)'" \
 	-p ./plot_latency.gnuplot > $@
 
-lat_ops.png: $(MEAN_FILES)
-	gnuplot -e "list='$(LAT_OPS_FILES)'" -p ./plot_latency_throughput.gnuplot > $@
+median_lat_ops.png: $(MEAN_FILES)
+	gnuplot -e "list='$(MEDIAN_LAT_OPS_FILES)'" -p ./plot_latency_throughput.gnuplot > $@
+
+mean_lat_ops.png: $(MEAN_FILES)
+	gnuplot -e "list='$(MEAN_LAT_OPS_FILES)'" -p ./plot_latency_throughput.gnuplot > $@
 
 clean:
 	git clean -fdx

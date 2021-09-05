@@ -5,6 +5,7 @@ import numpy as np
 m = {}
 
 median_latency = {}
+mean_latency = {}
 
 with open(sys.argv[1]) as f:
     for line in f.readlines():
@@ -16,7 +17,9 @@ with open(sys.argv[1]) as f:
 
 with open(sys.argv[2], 'w') as f:
     for key, v in m.items():
-        s = "%f %f\n" % (key, np.mean(v))
+        m_lat = np.mean(v)
+        s = "%f %f\n" % (key, m_lat)
+        mean_latency[key] = m_lat
         f.write(s)
 
 with open(sys.argv[3], 'w') as f:
@@ -37,5 +40,10 @@ with open(sys.argv[4]) as f:
 with open(sys.argv[5], 'w') as f:
     for key in sorted(throughput.keys()):
         s = "%f %f\n" % (throughput[key], median_latency[key])
+        f.write(s)
+
+with open(sys.argv[6], 'w') as f:
+    for key in sorted(throughput.keys()):
+        s = "%f %f\n" % (throughput[key], mean_latency[key])
         f.write(s)
 
